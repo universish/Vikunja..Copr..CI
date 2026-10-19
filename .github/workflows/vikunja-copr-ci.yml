@@ -1,1 +1,293 @@
+# Dosya Yolu: .github/workflows/vikunja-copr-ci.yml
+# Depo: https://github.com/universish/Vikunja..Copr..CI
+# Hedef Fedora Copr: https://copr.fedorainfracloud.org/coprs/universish/Vikunja../
 
+name: Vikunja Fedora Copr CI/CD
+
+on:
+  schedule:
+    # Vikunja merkezi: Lübeck, Almanya (Europe/Berlin - CET: UTC+1 / CEST: UTC+2)
+    # 1) Öğle arası kontrolü: 11:00 UTC (Lübeck saatiyle kışın 12:00 CET, yazın 13:00 CEST)
+    - cron: '0 11 * * *'
+    # 2) İş çıkışı kontrolü: 16:00 UTC (Lübeck saatiyle kışın 17:00 CET, yazın 18:00 CEST)
+    - cron: '0 16 * * *'
+  workflow_dispatch:
+    inputs:
+      force_version:
+        description: 'Zorunlu paketlenecek sürüm (örn: 2.7.0, boş bırakılırsa otomatik aranır)'
+        required: false
+        default: ''
+      force_run:
+        description: 'Sürüm zaten paketlenmiş olsa bile 3. aşamayı zorla çalıştır'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+
+env:
+  GITHUB_UPSTREAM_REPO: "go-vikunja/vikunja"
+  DL_VIKUNJA_DESKTOP_URL: "https://dl.vikunja.io/desktop"
+  DL_VIKUNJA_SERVER_URL: "https://dl.vikunja.io/vikunja"
+  DL_VIKUNJA_VEANS_URL: "https://dl.vikunja.io/veans"
+  COPR_REPO: "universish/Vikunja.."
+
+jobs:
+  # ============================================================================
+  # 1. AŞAMA: GitHub Releases Kontrolü (https://github.com/go-vikunja/vikunja/releases/)
+  # Yeni güncelleme doğrulanırsa direkt 3. aşamaya geçilir; doğrulanmazsa 2. aşamaya geçilir.
+  # ============================================================================
+  stage1_github_releases:
+    name: "1. Aşama: GitHub Releases RPM Arama"
+    runs-on: ubuntu-latest
+    outputs:
+      new_update: ${{ steps.check_gh.outputs.new_update }}
+      version: ${{ steps.check_gh.outputs.version }}
+      source_stage: ${{ steps.check_gh.outputs.source_stage }}
+    steps:
+      - name: Depoyu Klonla
+        uses: actions/checkout@v4
+
+      - name: GitHub Releases Üzerinde 7 RPM Dosyasını Ara
+        id: check_gh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE_VERSION: ${{ inputs.force_version }}
+          FORCE_RUN: ${{ inputs.force_run }}
+        run: |
+          set -euo pipefail
+
+          LAST_VERSION=""
+          if [ -f "LAST_VERSION" ]; then
+            LAST_VERSION=$(tr -d '[:space:]' < LAST_VERSION)
+          fi
+          echo "Son paketlenen sürüm: '${LAST_VERSION:-yok}'"
+
+          # GitHub API üzerinden en son sürümü al
+          if [ -n "${FORCE_VERSION}" ]; then
+            RAW_TAG="v${FORCE_VERSION#v}"
+            RELEASE_JSON=$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" \
+              "https://api.github.com/repos/${GITHUB_UPSTREAM_REPO}/releases/tags/${RAW_TAG}" || echo "{}")
+          else
+            RELEASE_JSON=$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" \
+              "https://api.github.com/repos/${GITHUB_UPSTREAM_REPO}/releases/latest" || echo "{}")
+          fi
+
+          TAG_NAME=$(echo "${RELEASE_JSON}" | jq -r '.tag_name // empty')
+          if [ -z "${TAG_NAME}" ]; then
+            echo "GitHub Releases üzerinden sürüm etiketi alınamadı. 2. aşamaya geçiliyor."
+            echo "new_update=false" >> "$GITHUB_OUTPUT"
+            echo "version=" >> "$GITHUB_OUTPUT"
+            echo "source_stage=none" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          VERSION="${TAG_NAME#v}"
+          echo "GitHub Releases üzerinde bulunan son sürüm: v${VERSION}"
+
+          # Sürüm daha önce paketlendi mi kontrol et
+          if [ "${VERSION}" = "${LAST_VERSION}" ] && [ "${FORCE_RUN}" != "true" ]; then
+            echo "v${VERSION} sürümü zaten paketlenmiş. dl.vikunja.io kontrolü için 2. aşamaya geçiliyor."
+            echo "new_update=false" >> "$GITHUB_OUTPUT"
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "source_stage=none" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Aranacak 7 RPM dosya ismi:
+          # 1. Vikunja Desktop-vX.Y.Z.rpm
+          # 2. vikunja-vX.Y.Z-x86_64.rpm
+          # 3. vikunja-vX.Y.Z-armv7.rpm
+          # 4. vikunja-vX.Y.Z-aarch64.rpm
+          # 5. veans-vX.Y.Z-x86_64.rpm
+          # 6. veans-vX.Y.Z-armv7.rpm
+          # 7. veans-vX.Y.Z-aarch64.rpm
+          ASSETS_LIST=$(echo "${RELEASE_JSON}" | jq -r '.assets[].name // empty')
+          echo "Sürümdeki RPM varlıkları:"
+          echo "${ASSETS_LIST}" | grep -E '\.rpm$' || true
+
+          MISSING=0
+          REQUIRED_RPMS=(
+            "vikunja-v${VERSION}-x86_64.rpm"
+            "vikunja-v${VERSION}-armv7.rpm"
+            "vikunja-v${VERSION}-aarch64.rpm"
+            "veans-v${VERSION}-x86_64.rpm"
+            "veans-v${VERSION}-armv7.rpm"
+            "veans-v${VERSION}-aarch64.rpm"
+          )
+
+          for rpm_file in "${REQUIRED_RPMS[@]}"; do
+            if ! echo "${ASSETS_LIST}" | grep -Fxq "${rpm_file}"; then
+              echo "Eksik dosya (GitHub Releases): ${rpm_file}"
+              MISSING=1
+            else
+              echo "Bulundu: ${rpm_file}"
+            fi
+          done
+
+          # Vikunja Desktop-vX.Y.Z.rpm kontrolü
+          if echo "${ASSETS_LIST}" | grep -Fxq "Vikunja Desktop-v${VERSION}.rpm" || \
+             echo "${ASSETS_LIST}" | grep -Fxq "Vikunja.Desktop-v${VERSION}.rpm"; then
+            echo "Bulundu: Vikunja Desktop-v${VERSION}.rpm"
+          else
+            echo "Eksik dosya (GitHub Releases): Vikunja Desktop-v${VERSION}.rpm"
+            MISSING=1
+          fi
+
+          if [ "${MISSING}" -eq 0 ]; then
+            echo "1. Aşamada yeni güncelleme ve tüm 7 RPM dosyası doğrulandı! Direkt 3. aşamaya geçiliyor."
+            echo "new_update=true" >> "$GITHUB_OUTPUT"
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "source_stage=stage1" >> "$GITHUB_OUTPUT"
+          else
+            echo "1. Aşamada yeni güncelleme doğrulanamadı. 2. Aşamaya (dl.vikunja.io) geçiliyor."
+            echo "new_update=false" >> "$GITHUB_OUTPUT"
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "source_stage=none" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ============================================================================
+  # 2. AŞAMA: dl.vikunja.io Kontrolü (https://dl.vikunja.io/desktop/vX.Y.Z/)
+  # Sadece 1. aşamada yeni güncelleme doğrulanmadıysa çalışır.
+  # ============================================================================
+  stage2_dl_vikunja:
+    name: "2. Aşama: dl.vikunja.io/desktop/vX.Y.Z Kontrolü"
+    needs: stage1_github_releases
+    if: needs.stage1_github_releases.outputs.new_update != 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      new_update: ${{ steps.check_dl.outputs.new_update }}
+      version: ${{ steps.check_dl.outputs.version }}
+      source_stage: ${{ steps.check_dl.outputs.source_stage }}
+    steps:
+      - name: Depoyu Klonla
+        uses: actions/checkout@v4
+
+      - name: dl.vikunja.io/desktop/vX.Y.Z/ Adresinde Vikunja Desktop-vX.Y.Z.rpm Ara
+        id: check_dl
+        env:
+          FORCE_VERSION: ${{ inputs.force_version }}
+          FORCE_RUN: ${{ inputs.force_run }}
+          STAGE1_VERSION: ${{ needs.stage1_github_releases.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          LAST_VERSION=""
+          if [ -f "LAST_VERSION" ]; then
+            LAST_VERSION=$(tr -d '[:space:]' < LAST_VERSION)
+          fi
+
+          if [ -n "${FORCE_VERSION}" ]; then
+            VERSION="${FORCE_VERSION#v}"
+          else
+            # https://dl.vikunja.io/desktop/ dizin listesinden vX.Y.Z sürümlerini çek ve en günceli bul
+            INDEX_HTML=$(curl -fsSL "${DL_VIKUNJA_DESKTOP_URL}/")
+            VERSION=$(echo "${INDEX_HTML}" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | sed 's/^v//' | sort -V | tail -n 1 || true)
+            if [ -z "${VERSION}" ] && [ -n "${STAGE1_VERSION}" ]; then
+              VERSION="${STAGE1_VERSION}"
+            fi
+          fi
+
+          if [ -z "${VERSION}" ]; then
+            echo "dl.vikunja.io/desktop/ üzerinde geçerli bir vX.Y.Z sürümü bulunamadı."
+            echo "new_update=false" >> "$GITHUB_OUTPUT"
+            echo "version=" >> "$GITHUB_OUTPUT"
+            echo "source_stage=none" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Kontrol edilen sürüm: v${VERSION}"
+
+          if [ "${VERSION}" = "${LAST_VERSION}" ] && [ "${FORCE_RUN}" != "true" ]; then
+            echo "v${VERSION} zaten paketlenmiş durumda. İşlem sonlandırılıyor."
+            echo "new_update=false" >> "$GITHUB_OUTPUT"
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "source_stage=none" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Örnek: https://dl.vikunja.io/desktop/v2.7.0/Vikunja%20Desktop-v2.7.0.rpm --> Vikunja Desktop-v2.7.0.rpm
+          DESKTOP_RPM_URL="${DL_VIKUNJA_DESKTOP_URL}/v${VERSION}/Vikunja%20Desktop-v${VERSION}.rpm"
+          echo "Kontrol ediliyor: ${DESKTOP_RPM_URL}"
+
+          if curl -fsSLI "${DESKTOP_RPM_URL}" >/dev/null 2>&1; then
+            echo "Doğrulandı: ${DESKTOP_RPM_URL} --> Vikunja Desktop-v${VERSION}.rpm mevcut! 3. aşamaya geçiliyor."
+            echo "new_update=true" >> "$GITHUB_OUTPUT"
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "source_stage=stage2" >> "$GITHUB_OUTPUT"
+          else
+            echo "Vikunja Desktop-v${VERSION}.rpm henüz ${DESKTOP_RPM_URL} adresinde yayınlanmamış."
+            echo "new_update=false" >> "$GITHUB_OUTPUT"
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "source_stage=none" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ============================================================================
+  # 3. AŞAMA: RPM Dosyalarının Açılması, Spec ile Yeniden Paketlenmesi ve Copr'a Yayınlanması
+  # 1. Aşama VEYA 2. Aşama yeni sürüm doğruladığında otomatik çalışır.
+  # ============================================================================
+  stage3_repackage_and_publish:
+    name: "3. Aşama: RPM Açma, Spec ile Paketleme ve Fedora Copr Yayınlama"
+    needs: [stage1_github_releases, stage2_dl_vikunja]
+    if: |
+      always() && (
+        needs.stage1_github_releases.outputs.new_update == 'true' ||
+        needs.stage2_dl_vikunja.outputs.new_update == 'true'
+      )
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:latest
+    steps:
+      - name: Depoyu Klonla
+        uses: actions/checkout@v4
+
+      - name: Gerekli Paketleme ve Fedora Copr Araçlarını Kur
+        run: |
+          dnf install -y \
+            rpm-build \
+            rpmdevtools \
+            cpio \
+            copr-cli \
+            curl \
+            jq \
+            git \
+            tar \
+            gzip \
+            findutils \
+            sed \
+            coreutils
+
+      - name: Fedora Copr API Kimlik Bilgilerini Yapılandır
+        env:
+          COPR_CONFIG: ${{ secrets.COPR_CONFIG }}
+        run: |
+          if [ -z "${COPR_CONFIG}" ]; then
+            echo "::error::COPR_CONFIG GitHub Secret tanımlanmamış! Lütfen https://copr.fedorainfracloud.org/api/ adresinden aldığınız yapılandırmayı secrets.COPR_CONFIG olarak ekleyin."
+            exit 1
+          fi
+          mkdir -p ~/.config
+          printf "%s\n" "${COPR_CONFIG}" > ~/.config/copr
+          chmod 600 ~/.config/copr
+
+      - name: RPM Dosyalarını İndir, Aç, Spec ile Yeniden Paketle ve Copr'a Gönder
+        env:
+          VERSION: ${{ needs.stage1_github_releases.outputs.new_update == 'true' && needs.stage1_github_releases.outputs.version || needs.stage2_dl_vikunja.outputs.version }}
+          SOURCE_STAGE: ${{ needs.stage1_github_releases.outputs.new_update == 'true' && 'stage1' || 'stage2' }}
+        run: |
+          chmod +x scripts/repackage_and_publish.sh
+          ./scripts/repackage_and_publish.sh "${VERSION}" "${SOURCE_STAGE}"
+
+      - name: Paketlenen Sürümü (LAST_VERSION) Depoya Kaydet
+        env:
+          VERSION: ${{ needs.stage1_github_releases.outputs.new_update == 'true' && needs.stage1_github_releases.outputs.version || needs.stage2_dl_vikunja.outputs.version }}
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          echo "${VERSION}" > LAST_VERSION
+          git add LAST_VERSION
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(release): v${VERSION} Fedora Copr üzerinde yayınlandı"
+            git push
+          fi
