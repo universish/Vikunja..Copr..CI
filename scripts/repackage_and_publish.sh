@@ -1,14 +1,27 @@
 #!/usr/bin/env bash
 # Dosya Yolu: scripts/repackage_and_publish.sh
 # 3. Aşama: Upstream RPM dosyalarını indirir, rpm2cpio ile açar,
-# Fedora Copr .spec dosyalarıyla SRPM olarak yeniden paketler ve
+# paketleme numarasını (+1) uygulayarak Fedora Copr .spec dosyalarıyla SRPM üretir ve
 # https://copr.fedorainfracloud.org/coprs/universish/Vikunja../ deposuna yayınlar.
 
 set -euo pipefail
 
-VERSION="${1:?Kullanım: $0 <X.Y.Z> [stage1|stage2]}"
+VERSION="${1:?Kullanım: $0 <X.Y.Z> [stage1|stage2] [paket-numarasi]}"
 VERSION="${VERSION#v}"
 SOURCE_STAGE="${2:-stage1}"
+RELEASE_NUM="${3:-}"
+
+# Eğer dışarıdan RELEASE_NUM verilmediyse RELEASE_NUMBER dosyasından okuyup +1 artır
+if [ -z "${RELEASE_NUM}" ]; then
+  CURRENT_REL=0
+  if [ -f "RELEASE_NUMBER" ]; then
+    RAW_REL=$(tr -d '[:space:]' < RELEASE_NUMBER || echo "0")
+    if [[ "${RAW_REL}" =~ ^[0-9]+$ ]]; then
+      CURRENT_REL="${RAW_REL}"
+    fi
+  fi
+  RELEASE_NUM=$((CURRENT_REL + 1))
+fi
 
 COPR_REPO="${COPR_REPO:-universish/Vikunja..}"
 GH_RELEASE_BASE="https://github.com/go-vikunja/vikunja/releases/download/v${VERSION}"
@@ -37,7 +50,8 @@ mkdir -p "${DOWNLOAD_DIR}" "${EXTRACT_DIR}"
 rpmdev-setuptree
 
 echo "=================================================================="
-echo "Vikunja v${VERSION} 3. Aşama Başlatıldı (Kaynak: ${SOURCE_STAGE})"
+echo "Vikunja v${VERSION}-${RELEASE_NUM} 3. Aşama Başlatıldı (Kaynak: ${SOURCE_STAGE})"
+echo "Paket Sürüm Formatı: vikunja-v${VERSION}-${RELEASE_NUM}"
 echo "Hedef Copr Deposu: ${COPR_REPO}"
 echo "=================================================================="
 
@@ -115,13 +129,14 @@ for arch in x86_64 armv7 aarch64; do
     "veans-${VERSION}-${arch}.tar.gz"
 done
 
-# 3. Spec dosyaları ile SRPM (.src.rpm) paketlerini oluştur
+# 3. Spec dosyaları ile SRPM (.src.rpm) paketlerini oluştur (_version ve _release tanımlanır)
 cp specs/vikunja.spec specs/vikunja-desktop.spec specs/veans.spec "${RPMBUILD_DIR}/SPECS/"
 
 for spec_name in vikunja vikunja-desktop veans; do
-  echo "SRPM oluşturuluyor: ${spec_name}.spec (v${VERSION})"
+  echo "SRPM oluşturuluyor: ${spec_name}-v${VERSION}-${RELEASE_NUM}"
   rpmbuild -bs \
     --define "_version ${VERSION}" \
+    --define "_release ${RELEASE_NUM}" \
     "${RPMBUILD_DIR}/SPECS/${spec_name}.spec"
 done
 
@@ -140,9 +155,9 @@ copr-cli modify "${CHROOT_ARGS[@]}" "${COPR_REPO}" || \
 
 # 5. SRPM paketlerini Fedora Copr deposuna gönder ve yayınla
 for pkg_name in vikunja vikunja-desktop veans; do
-  srpm_file=$(find "${RPMBUILD_DIR}/SRPMS" -maxdepth 1 -name "${pkg_name}-${VERSION}-*.src.rpm" | head -n 1)
+  srpm_file=$(find "${RPMBUILD_DIR}/SRPMS" -maxdepth 1 -name "${pkg_name}-${VERSION}-${RELEASE_NUM}*.src.rpm" | head -n 1)
   if [ -z "${srpm_file}" ]; then
-    echo "::error::${pkg_name} için SRPM dosyası bulunamadı!"
+    echo "::error::${pkg_name}-${VERSION}-${RELEASE_NUM} için SRPM dosyası bulunamadı!"
     exit 1
   fi
 
@@ -155,6 +170,6 @@ for pkg_name in vikunja vikunja-desktop veans; do
 done
 
 echo "=================================================================="
-echo "Tüm paketler (vikunja, vikunja-desktop, veans v${VERSION}) başarıyla"
+echo "Tüm paketler (vikunja, vikunja-desktop, veans v${VERSION}-${RELEASE_NUM})"
 echo "https://copr.fedorainfracloud.org/coprs/${COPR_REPO}/ deposuna gönderildi!"
 echo "=================================================================="
