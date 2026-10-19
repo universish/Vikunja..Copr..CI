@@ -1,5 +1,6 @@
 # Dosya Yolu: specs/vikunja.spec
 # Fedora Copr (Fedora 44, 45, Rawhide & openSUSE Leap 16.0, Tumbleweed) için Vikunja Sunucu/API Paketi
+# Paketleme numarası (_release) her CI çalışmasında otomatik olarak +1 artırılır.
 
 %global debug_package %{nil}
 %global _build_id_links none
@@ -9,7 +10,7 @@
 
 Name:           vikunja
 Version:        %{?_version}%{!?_version:2.7.0}
-Release:        1%{?dist}
+Release:        %{?_release}%{!?_release:1}%{?dist}
 Summary:        The open-source, self-hostable to-do app (Server & Web UI)
 License:        AGPL-3.0-or-later
 URL:            https://vikunja.io
@@ -24,7 +25,8 @@ Requires:       shadow-utils
 %description
 Vikunja is an open-source, self-hosted task management application.
 This package contains the upstream Vikunja server binary, configuration
-template, and systemd unit repackaged for Fedora and openSUSE via Copr.
+template, and systemd unit repackaged for Fedora and openSUSE via Copr
+(Build revision: %{name}-v%{version}-%{?_release}%{!?_release:1}).
 
 %prep
 %setup -q -c -T
@@ -98,5 +100,5 @@ fi
 %files -f %{_builddir}/filelist.txt
 
 %changelog
-* Mon Oct 19 2026 universish <universish@users.noreply.github.com> - %{version}-1
-- Automated Copr repackaging of upstream Vikunja RPM (x86_64, aarch64, armv7)
+* Mon Oct 19 2026 universish <universish@users.noreply.github.com> - %{version}-%{?_release}%{!?_release:1}
+- Automated Copr repackaging of upstream Vikunja RPM (vikunja-v%{version}-%{?_release}%{!?_release:1})

@@ -1,5 +1,6 @@
 # Dosya Yolu: specs/veans.spec
 # Fedora Copr (Fedora 44, 45, Rawhide & openSUSE Leap 16.0, Tumbleweed) için Veans CLI Paketi
+# Paketleme numarası (_release) her CI çalışmasında otomatik olarak +1 artırılır.
 
 %global debug_package %{nil}
 %global _build_id_links none
@@ -9,7 +10,7 @@
 
 Name:           veans
 Version:        %{?_version}%{!?_version:2.7.0}
-Release:        1%{?dist}
+Release:        %{?_release}%{!?_release:1}%{?dist}
 Summary:        Veans CLI - Command-line and agent tool for Vikunja
 License:        AGPL-3.0-or-later
 URL:            https://vikunja.io
@@ -22,7 +23,8 @@ AutoReqProv:    no
 
 %description
 Veans is the official command-line and agent CLI tool for interacting with Vikunja.
-Repackaged from upstream veans-v%{version} RPM releases for Fedora and openSUSE.
+Repackaged from upstream veans-v%{version} RPM releases for Fedora and openSUSE
+(Build revision: %{name}-v%{version}-%{?_release}%{!?_release:1}).
 
 %prep
 %setup -q -c -T
@@ -73,5 +75,5 @@ done
 %files -f %{_builddir}/filelist.txt
 
 %changelog
-* Mon Oct 19 2026 universish <universish@users.noreply.github.com> - %{version}-1
-- Automated Copr repackaging of upstream veans RPM (x86_64, aarch64, armv7)
+* Mon Oct 19 2026 universish <universish@users.noreply.github.com> - %{version}-%{?_release}%{!?_release:1}
+- Automated Copr repackaging of upstream veans RPM (veans-v%{version}-%{?_release}%{!?_release:1})

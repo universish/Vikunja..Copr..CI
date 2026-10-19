@@ -1,5 +1,6 @@
 # Dosya Yolu: specs/vikunja-desktop.spec
 # Fedora Copr (Fedora 44, 45, Rawhide & openSUSE Leap 16.0, Tumbleweed) için Vikunja Desktop Paketi
+# Paketleme numarası (_release) her CI çalışmasında otomatik olarak +1 artırılır.
 
 %global debug_package %{nil}
 %global _build_id_links none
@@ -10,7 +11,7 @@
 
 Name:           vikunja-desktop
 Version:        %{?_version}%{!?_version:2.7.0}
-Release:        1%{?dist}
+Release:        %{?_release}%{!?_release:1}%{?dist}
 Summary:        Vikunja Desktop Application
 License:        GPL-3.0-or-later
 URL:            https://vikunja.io
@@ -21,7 +22,8 @@ AutoReqProv:    no
 
 %description
 Official desktop client for Vikunja, the open-source, self-hostable to-do app.
-Repackaged from upstream Vikunja Desktop-v%{version}.rpm for Fedora and openSUSE.
+Repackaged from upstream Vikunja Desktop-v%{version}.rpm for Fedora and openSUSE
+(Build revision: %{name}-v%{version}-%{?_release}%{!?_release:1}).
 
 %prep
 %setup -q -c -T
@@ -58,5 +60,5 @@ done
 %files -f %{_builddir}/filelist.txt
 
 %changelog
-* Mon Oct 19 2026 universish <universish@users.noreply.github.com> - %{version}-1
-- Automated Copr repackaging of upstream Vikunja Desktop-v%{version}.rpm
+* Mon Oct 19 2026 universish <universish@users.noreply.github.com> - %{version}-%{?_release}%{!?_release:1}
+- Automated Copr repackaging of upstream Vikunja Desktop RPM (vikunja-desktop-v%{version}-%{?_release}%{!?_release:1})
