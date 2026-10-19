@@ -18,7 +18,7 @@ on:
         required: false
         default: ''
       force_run:
-        description: 'Sürüm zaten paketlenmiş olsa bile 3. aşamayı zorla çalıştır'
+        description: 'Sürüm zaten paketlenmiş olsa bile 3. aşamayı zorla çalıştır (paket numarasını +1 artırır)'
         type: boolean
         required: false
         default: false
@@ -224,11 +224,12 @@ jobs:
           fi
 
   # ============================================================================
-  # 3. AŞAMA: RPM Dosyalarının Açılması, Spec ile Yeniden Paketlenmesi ve Copr'a Yayınlanması
+  # 3. AŞAMA: RPM Dosyalarının Açılması, Paketleme Numarasının +1 Artırılması,
+  # Spec ile Yeniden Paketlenmesi ve Copr'a Yayınlanması
   # 1. Aşama VEYA 2. Aşama yeni sürüm doğruladığında otomatik çalışır.
   # ============================================================================
   stage3_repackage_and_publish:
-    name: "3. Aşama: RPM Açma, Spec ile Paketleme ve Fedora Copr Yayınlama"
+    name: "3. Aşama: RPM Açma, Spec ile Paketleme (+1 Release) ve Copr Yayınlama"
     needs: [stage1_github_releases, stage2_dl_vikunja]
     if: |
       always() && (
@@ -270,24 +271,45 @@ jobs:
           printf "%s\n" "${COPR_CONFIG}" > ~/.config/copr
           chmod 600 ~/.config/copr
 
-      - name: RPM Dosyalarını İndir, Aç, Spec ile Yeniden Paketle ve Copr'a Gönder
+      - name: Paketleme Numarasını (+1) Hesapla, RPM'leri Aç, Yeniden Paketle ve Copr'a Gönder
+        id: build_copr
         env:
           VERSION: ${{ needs.stage1_github_releases.outputs.new_update == 'true' && needs.stage1_github_releases.outputs.version || needs.stage2_dl_vikunja.outputs.version }}
           SOURCE_STAGE: ${{ needs.stage1_github_releases.outputs.new_update == 'true' && 'stage1' || 'stage2' }}
         run: |
-          chmod +x scripts/repackage_and_publish.sh
-          ./scripts/repackage_and_publish.sh "${VERSION}" "${SOURCE_STAGE}"
+          set -euo pipefail
 
-      - name: Paketlenen Sürümü (LAST_VERSION) Depoya Kaydet
+          # Mevcut paketleme numarasını oku ve her paketlemede +1 artır
+          # Örn: vikunja-v2.7.0-1 -> vikunja-v2.7.0-2 -> vikunja-v2.7.0-3
+          CURRENT_RELEASE=0
+          if [ -f "RELEASE_NUMBER" ]; then
+            RAW_REL=$(tr -d '[:space:]' < RELEASE_NUMBER || echo "0")
+            if [[ "${RAW_REL}" =~ ^[0-9]+$ ]]; then
+              CURRENT_RELEASE="${RAW_REL}"
+            fi
+          fi
+
+          NEXT_RELEASE=$((CURRENT_RELEASE + 1))
+          echo "Önceki paketleme numarası: ${CURRENT_RELEASE} -> Yeni paketleme numarası: ${NEXT_RELEASE}"
+          echo "Paket formatı: vikunja-v${VERSION}-${NEXT_RELEASE}"
+
+          chmod +x scripts/repackage_and_publish.sh
+          ./scripts/repackage_and_publish.sh "${VERSION}" "${SOURCE_STAGE}" "${NEXT_RELEASE}"
+
+          echo "${VERSION}" > LAST_VERSION
+          echo "${NEXT_RELEASE}" > RELEASE_NUMBER
+          echo "release_number=${NEXT_RELEASE}" >> "$GITHUB_OUTPUT"
+
+      - name: Paketlenen Sürümü (LAST_VERSION) ve Paket Numarasını (RELEASE_NUMBER) Depoya Kaydet
         env:
           VERSION: ${{ needs.stage1_github_releases.outputs.new_update == 'true' && needs.stage1_github_releases.outputs.version || needs.stage2_dl_vikunja.outputs.version }}
+          RELEASE_NUM: ${{ steps.build_copr.outputs.release_number }}
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          echo "${VERSION}" > LAST_VERSION
-          git add LAST_VERSION
+          git add LAST_VERSION RELEASE_NUMBER
           if ! git diff --cached --quiet; then
-            git commit -m "chore(release): v${VERSION} Fedora Copr üzerinde yayınlandı"
+            git commit -m "chore(release): vikunja-v${VERSION}-${RELEASE_NUM} Fedora Copr üzerinde yayınlandı"
             git push
           fi
