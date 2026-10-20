@@ -160,7 +160,7 @@ copr-cli modify "${CHROOT_ARGS[@]}" "${COPR_REPO}" || \
 # PWA paketinin spec içindeki asıl adı 'vikunja-webui-pwa' olduğu için listeye bu isimle ekliyoruz
 for pkg_name in vikunja vikunja-desktop veans vikunja-webui-pwa; do
   # PWA paketinin versiyon isimlendirmesi (1.0.0-1) diğerlerinden farklı olabileceği için find komutunu daha genel tutuyoruz
-  srpm_file=$(find "${RPMBUILD_DIR}/SRPMS" -maxdepth 1 -name "${pkg_name}-*.src.rpm" | head -n 1)
+  srpm_file=$(find "${RPMBUILD_DIR}/SRPMS" -maxdepth 1 -name "${pkg_name}-[0-9]*.src.rpm" | head -n 1)
   
   if [ -z "${srpm_file}" ]; then
     echo "::error::${pkg_name} için SRPM dosyası bulunamadı!"
