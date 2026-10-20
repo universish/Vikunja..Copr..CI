@@ -95,14 +95,6 @@ jobs:
             exit 0
           fi
 
-          # Aranacak 7 RPM dosya ismi:
-          # 1. Vikunja Desktop-vX.Y.Z.rpm
-          # 2. vikunja-vX.Y.Z-x86_64.rpm
-          # 3. vikunja-vX.Y.Z-armv7.rpm
-          # 4. vikunja-vX.Y.Z-aarch64.rpm
-          # 5. veans-vX.Y.Z-x86_64.rpm
-          # 6. veans-vX.Y.Z-armv7.rpm
-          # 7. veans-vX.Y.Z-aarch64.rpm
           ASSETS_LIST=$(echo "${RELEASE_JSON}" | jq -r '.assets[].name // empty')
           echo "Sürümdeki RPM varlıkları:"
           echo "${ASSETS_LIST}" | grep -E '\.rpm$' || true
@@ -181,7 +173,6 @@ jobs:
           if [ -n "${FORCE_VERSION}" ]; then
             VERSION="${FORCE_VERSION#v}"
           else
-            # https://dl.vikunja.io/desktop/ dizin listesinden vX.Y.Z sürümlerini çek ve en günceli bul
             INDEX_HTML=$(curl -fsSL "${DL_VIKUNJA_DESKTOP_URL}/")
             VERSION=$(echo "${INDEX_HTML}" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | sed 's/^v//' | sort -V | tail -n 1 || true)
             if [ -z "${VERSION}" ] && [ -n "${STAGE1_VERSION}" ]; then
@@ -207,7 +198,6 @@ jobs:
             exit 0
           fi
 
-          # Örnek: https://dl.vikunja.io/desktop/v2.7.0/Vikunja%20Desktop-v2.7.0.rpm --> Vikunja Desktop-v2.7.0.rpm
           DESKTOP_RPM_URL="${DL_VIKUNJA_DESKTOP_URL}/v${VERSION}/Vikunja%20Desktop-v${VERSION}.rpm"
           echo "Kontrol ediliyor: ${DESKTOP_RPM_URL}"
 
@@ -240,6 +230,9 @@ jobs:
     container:
       image: fedora:latest
     steps:
+      - name: Git Paketini Kur
+        run: dnf install -y git
+
       - name: Depoyu Klonla
         uses: actions/checkout@v4
 
@@ -252,7 +245,6 @@ jobs:
             copr-cli \
             curl \
             jq \
-            git \
             tar \
             gzip \
             findutils \
@@ -279,8 +271,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Mevcut paketleme numarasını oku ve her paketlemede +1 artır
-          # Örn: vikunja-v2.7.0-1 -> vikunja-v2.7.0-2 -> vikunja-v2.7.0-3
           CURRENT_RELEASE=0
           if [ -f "RELEASE_NUMBER" ]; then
             RAW_REL=$(tr -d '[:space:]' < RELEASE_NUMBER || echo "0")
