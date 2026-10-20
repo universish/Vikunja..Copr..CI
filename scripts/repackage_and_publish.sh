@@ -131,7 +131,7 @@ done
 
 # 3. Spec dosyaları ile SRPM (.src.rpm) paketlerini oluştur
 # ÖNEMLİ: PWA paketi için ikon dosyasını SOURCES dizinine kopyalayın (yolu deponuza göre ayarlayın)
-cp path/to/vikunja.png "${RPMBUILD_DIR}/SOURCES/" 
+cp assets/vikunja.png "${RPMBUILD_DIR}/SOURCES/"
 
 cp specs/vikunja.spec specs/vikunja-desktop.spec specs/veans.spec specs/vikunja-pwa-webui.spec "${RPMBUILD_DIR}/SPECS/"
 
