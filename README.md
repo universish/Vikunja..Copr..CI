@@ -66,13 +66,35 @@ sudo dnf install -y veans
 
 ```
 
+##### Vikunja WebUI (Smart PWA Launcher)
+
+The `vikunja-webui-pwa` package provides a smart PWA wrapper for the Vikunja Task Management Web UI. It automatically launches the local interface (`http://localhost:3456/`) as a standalone, borderless PWA window in your preferred browser, injecting optimal Wayland and GPU acceleration flags without relying on heavy Electron dependencies.
+
+#### Installation
+
+**For Fedora (44, 45, Rawhide):**
+```bash
+sudo dnf install -y vikunja-webui-pwa
+```
+For openSUSE (Tumbleweed & Leap 16.0):
+```
+sudo zypper install -y vikunja-webui-pwa
+```
+
+----
+
 #### Package Update and Metadata Cache Bypass (Bypass Metadata Cache & Upgrade)
 
 To bypass local metadata caching and immediately pull new builds or packaging revisions (`vikunja-v<version>-<package-number>`):
 
 ```bash
-sudo dnf upgrade --refresh -y vikunja vikunja-desktop veans
+sudo dnf upgrade --refresh -y vikunja vikunja-desktop veans vikunja-webui-pwa
 
+```
+
+To bypass local metadata caching and upgrade the PWA launcher:
+```
+sudo dnf upgrade --refresh -y vikunja-webui-pwa
 ```
 
 If package metadata does not resolve immediately:
@@ -83,6 +105,11 @@ sudo dnf install -y vikunja vikunja-desktop veans
 # or to upgrade installed packages to the latest package version:
 sudo dnf distro-sync --refresh -y vikunja vikunja-desktop veans
 
+```
+
+For openSUSE:
+```
+sudo zypper refresh -f && sudo zypper update -y vikunja-webui-pwa
 ```
 
 #### Uninstalling Software (Uninstall Packages)
@@ -103,6 +130,13 @@ sudo dnf copr remove universish/Vikunja..
 
 ```
 
+If you want to uninstall the PWA launcher from your system:
+
+For Fedora:
+```
+sudo dnf remove -y vikunja-webui-pwa
+```
+
 ### 2. openSUSE (Tumbleweed & Leap 16.0) Commands
 
 #### Adding the Repository (Add Repository)
@@ -121,6 +155,11 @@ sudo zypper --gpg-auto-import-keys refresh
 sudo zypper addrepo -f https://copr.fedorainfracloud.org/coprs/universish/Vikunja../repo/opensuse-leap-16.0/universish-Vikunja..-opensuse-leap-16.0.repo
 sudo zypper --gpg-auto-import-keys refresh
 
+```
+
+If you want to uninstall the PWA launcher from your system:
+```
+sudo zypper remove -y vikunja-webui-pwa
 ```
 
 #### Installing Software (Install Packages)
