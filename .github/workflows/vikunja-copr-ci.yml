@@ -228,7 +228,7 @@ jobs:
   # Spec ile Yeniden Paketlenmesi ve Copr'a Yayınlanması
   # 1. Aşama VEYA 2. Aşama yeni sürüm doğruladığında otomatik çalışır.
   # ============================================================================
-stage3_repackage_and_publish:
+  stage3_repackage_and_publish:
     name: "3. Aşama: RPM Açma, Spec ile Paketleme (+1 Release) ve Copr Yayınlama"
     needs: [stage1_github_releases, stage2_dl_vikunja]
     if: |
@@ -240,6 +240,12 @@ stage3_repackage_and_publish:
     container:
       image: fedora:latest
     steps:
+      - name: Git Paketini Kur
+        run: dnf install -y git
+
+      - name: Depoyu Klonla
+        uses: actions/checkout@v4
+
       - name: Gerekli Paketleme ve Fedora Copr Araçlarını Kur
         run: |
           dnf install -y \
@@ -255,9 +261,6 @@ stage3_repackage_and_publish:
             findutils \
             sed \
             coreutils
-
-      - name: Depoyu Klonla
-        uses: actions/checkout@v4
 
       - name: Fedora Copr API Kimlik Bilgilerini Yapılandır
         env:
