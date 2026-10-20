@@ -129,11 +129,14 @@ for arch in x86_64 armv7 aarch64; do
     "veans-${VERSION}-${arch}.tar.gz"
 done
 
-# 3. Spec dosyaları ile SRPM (.src.rpm) paketlerini oluştur (_version ve _release tanımlanır)
-cp specs/vikunja.spec specs/vikunja-desktop.spec specs/veans.spec "${RPMBUILD_DIR}/SPECS/"
+# 3. Spec dosyaları ile SRPM (.src.rpm) paketlerini oluştur
+# ÖNEMLİ: PWA paketi için ikon dosyasını SOURCES dizinine kopyalayın (yolu deponuza göre ayarlayın)
+cp path/to/vikunja.png "${RPMBUILD_DIR}/SOURCES/" 
 
-for spec_name in vikunja vikunja-desktop veans; do
-  echo "SRPM oluşturuluyor: ${spec_name}-v${VERSION}-${RELEASE_NUM}"
+cp specs/vikunja.spec specs/vikunja-desktop.spec specs/veans.spec specs/vikunja-pwa-webui.spec "${RPMBUILD_DIR}/SPECS/"
+
+for spec_name in vikunja vikunja-desktop veans vikunja-pwa-webui; do
+  echo "SRPM oluşturuluyor: ${spec_name}"
   rpmbuild -bs \
     --define "_version ${VERSION}" \
     --define "_release ${RELEASE_NUM}" \
@@ -154,10 +157,13 @@ copr-cli modify "${CHROOT_ARGS[@]}" "${COPR_REPO}" || \
   echo "::warning::copr-cli modify komutu atlandı veya chroot'lar zaten tanımlı."
 
 # 5. SRPM paketlerini Fedora Copr deposuna gönder ve yayınla
-for pkg_name in vikunja vikunja-desktop veans; do
-  srpm_file=$(find "${RPMBUILD_DIR}/SRPMS" -maxdepth 1 -name "${pkg_name}-${VERSION}-${RELEASE_NUM}*.src.rpm" | head -n 1)
+# PWA paketinin spec içindeki asıl adı 'vikunja-webui-pwa' olduğu için listeye bu isimle ekliyoruz
+for pkg_name in vikunja vikunja-desktop veans vikunja-webui-pwa; do
+  # PWA paketinin versiyon isimlendirmesi (1.0.0-1) diğerlerinden farklı olabileceği için find komutunu daha genel tutuyoruz
+  srpm_file=$(find "${RPMBUILD_DIR}/SRPMS" -maxdepth 1 -name "${pkg_name}-*.src.rpm" | head -n 1)
+  
   if [ -z "${srpm_file}" ]; then
-    echo "::error::${pkg_name}-${VERSION}-${RELEASE_NUM} için SRPM dosyası bulunamadı!"
+    echo "::error::${pkg_name} için SRPM dosyası bulunamadı!"
     exit 1
   fi
 
